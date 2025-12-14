@@ -17,3 +17,27 @@ model Interview {
   feedback  String
   createdAt DateTime @default(now())
 }
+
+model Subscription {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  plan      String
+  platform  String
+  expiresAt DateTime
+}
+
+model Usage {
+  id              String   @id @default(uuid())
+  userId          String
+  date            DateTime
+  interviewsCount Int      @default(0)
+
+  @@unique([userId, date])
+}
+
+model ApiUsage {
+  id        String   @id @default(uuid())
+  userId    String
+  tokens    Int
+  createdAt DateTime @default(now())
+}
