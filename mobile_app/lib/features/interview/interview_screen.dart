@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../shared/services/api_service.dart';
 import '../../shared/services/analytics_service.dart';
@@ -13,7 +15,8 @@ class InterviewScreen extends StatefulWidget {
   State<InterviewScreen> createState() => _InterviewScreenState();
 }
 
-class _InterviewScreenState extends State<InterviewScreen> {
+class _InterviewScreenState extends State<InterviewScreen>
+    with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final SpeechToTextService _sttService = SpeechToTextService();
   final TextToSpeechService _ttsService = TextToSpeechService();
@@ -24,12 +27,22 @@ class _InterviewScreenState extends State<InterviewScreen> {
   bool _isListening = false;
   bool _isSubmitting = false;
   String? _error;
+  int _timeLeft = 120; // 2 min timer
+  Timer? _timer;
+
+  // Animation
+  late AnimationController _animationController;
 
   @override
   void initState() {
     super.initState();
     _initVoice();
     _loadQuestion();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
   }
 
   Future<void> _initVoice() async {
@@ -43,6 +56,7 @@ class _InterviewScreenState extends State<InterviewScreen> {
         _isLoading = true;
         _answer = '';
         _error = null;
+        _timeLeft = 120;
       });
 
       final question =
@@ -55,6 +69,8 @@ class _InterviewScreenState extends State<InterviewScreen> {
 
       await _ttsService.speak(question);
       await AnalyticsService.logInterviewStart(widget.role);
+
+      _startTimer();
     } catch (e) {
       setState(() {
         _error = 'Failed to load question';
@@ -63,17 +79,28 @@ class _InterviewScreenState extends State<InterviewScreen> {
     }
   }
 
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_timeLeft > 0) {
+        setState(() => _timeLeft--);
+      } else {
+        _submitAnswer();
+      }
+    });
+  }
+
   Future<void> _toggleListening() async {
     if (_isListening) {
       await _sttService.stopListening();
       setState(() => _isListening = false);
+      _animationController.reverse();
     } else {
       setState(() => _isListening = true);
-      await _sttService.startListening(
-        onResult: (text) {
-          setState(() => _answer = text);
-        },
-      );
+      _animationController.forward();
+      await _sttService.startListening(onResult: (text) {
+        setState(() => _answer = text);
+      });
     }
   }
 
@@ -90,6 +117,7 @@ class _InterviewScreenState extends State<InterviewScreen> {
       );
 
       setState(() => _isSubmitting = false);
+      _timer?.cancel();
 
       await AnalyticsService.logInterviewComplete(result['score']);
 
@@ -110,13 +138,11 @@ class _InterviewScreenState extends State<InterviewScreen> {
               const SizedBox(height: 12),
               const Text('Strengths',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              ...List.from(result['strengths'])
-                  .map((e) => Text('• $e')),
+              ...List.from(result['strengths']).map((e) => Text('• $e')),
               const SizedBox(height: 12),
               const Text('Improvements',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              ...List.from(result['improvements'])
-                  .map((e) => Text('• $e')),
+              ...List.from(result['improvements']).map((e) => Text('• $e')),
               const SizedBox(height: 12),
               Text(result['overallFeedback']),
               const SizedBox(height: 24),
@@ -133,9 +159,8 @@ class _InterviewScreenState extends State<InterviewScreen> {
       );
     } catch (e) {
       setState(() => _isSubmitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
     }
   }
 
@@ -143,13 +168,20 @@ class _InterviewScreenState extends State<InterviewScreen> {
   void dispose() {
     _ttsService.stop();
     _sttService.stopListening();
+    _timer?.cancel();
+    _animationController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: Text(widget.role)),
+      appBar: AppBar(
+        title: Text(widget.role),
+        backgroundColor: theme.colorScheme.primary,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: _isLoading
@@ -159,9 +191,33 @@ class _InterviewScreenState extends State<InterviewScreen> {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_question ?? '',
-                          style: const TextStyle(fontSize: 18)),
+                      // Question
+                      Text(
+                        _question ?? '',
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontSize: 18),
+                      ),
                       const SizedBox(height: 16),
+
+                      // Timer
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Time Left: $_timeLeft s',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          LinearProgressIndicator(
+                            value: _timeLeft / 120,
+                            minHeight: 6,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Answer box
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
@@ -173,28 +229,52 @@ class _InterviewScreenState extends State<InterviewScreen> {
                           _answer.isEmpty
                               ? 'Tap mic and answer...'
                               : _answer,
+                          style: const TextStyle(fontSize: 16),
                         ),
                       ),
                       const Spacer(),
+
+                      // Buttons
                       Row(
                         children: [
                           Expanded(
-                            child: ElevatedButton.icon(
-                              icon: Icon(_isListening
-                                  ? Icons.stop
-                                  : Icons.mic),
-                              label: Text(
-                                  _isListening ? 'Stop' : 'Answer'),
-                              onPressed: _toggleListening,
+                            child: GestureDetector(
+                              onTap: _toggleListening,
+                              child: ScaleTransition(
+                                scale: Tween(begin: 1.0, end: 1.2)
+                                    .animate(_animationController),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 14),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.secondary,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(_isListening
+                                          ? Icons.stop
+                                          : Icons.mic),
+                                      const SizedBox(width: 8),
+                                      Text(_isListening ? 'Stop' : 'Answer'),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton(
-                              onPressed:
-                                  _isSubmitting ? null : _submitAnswer,
+                              onPressed: _isSubmitting ? null : _submitAnswer,
+                              style: ElevatedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                              ),
                               child: _isSubmitting
-                                  ? const CircularProgressIndicator()
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white)
                                   : const Text('Submit'),
                             ),
                           ),
@@ -206,6 +286,5 @@ class _InterviewScreenState extends State<InterviewScreen> {
     );
   }
 }
-
 
 
