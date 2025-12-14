@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../shared/services/api_service.dart';
+import '../../shared/services/analytics_service.dart';
 import '../voice/speech_to_text_service.dart';
 import '../voice/text_to_speech_service.dart';
 
 class InterviewScreen extends StatefulWidget {
   final String role;
 
-  const InterviewScreen({
-    super.key,
-    required this.role,
-  });
+  const InterviewScreen({super.key, required this.role});
 
   @override
   State<InterviewScreen> createState() => _InterviewScreenState();
@@ -56,6 +54,7 @@ class _InterviewScreenState extends State<InterviewScreen> {
       });
 
       await _ttsService.speak(question);
+      await AnalyticsService.logInterviewStart(widget.role);
     } catch (e) {
       setState(() {
         _error = 'Failed to load question';
@@ -83,52 +82,61 @@ class _InterviewScreenState extends State<InterviewScreen> {
 
     setState(() => _isSubmitting = true);
 
-    final result = await _apiService.evaluateAnswer(
-      role: widget.role,
-      question: _question!,
-      answer: _answer,
-    );
+    try {
+      final result = await _apiService.evaluateAnswer(
+        role: widget.role,
+        question: _question!,
+        answer: _answer,
+      );
 
-    setState(() => _isSubmitting = false);
+      setState(() => _isSubmitting = false);
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Wrap(
-          children: [
-            Text(
-              'Score: ${result['score']}/10',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+      await AnalyticsService.logInterviewComplete(result['score']);
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: Wrap(
+            children: [
+              Text(
+                'Score: ${result['score']}/10',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text('Strengths',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            ...List.from(result['strengths'])
-                .map((e) => Text('• $e')),
-            const SizedBox(height: 12),
-            const Text('Improvements',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            ...List.from(result['improvements'])
-                .map((e) => Text('• $e')),
-            const SizedBox(height: 12),
-            Text(result['overallFeedback']),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _loadQuestion();
-              },
-              child: const Text('Next Question'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              const Text('Strengths',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              ...List.from(result['strengths'])
+                  .map((e) => Text('• $e')),
+              const SizedBox(height: 12),
+              const Text('Improvements',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              ...List.from(result['improvements'])
+                  .map((e) => Text('• $e')),
+              const SizedBox(height: 12),
+              Text(result['overallFeedback']),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _loadQuestion();
+                },
+                child: const Text('Next Question'),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      setState(() => _isSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    }
   }
 
   @override
@@ -198,5 +206,6 @@ class _InterviewScreenState extends State<InterviewScreen> {
     );
   }
 }
+
 
 
