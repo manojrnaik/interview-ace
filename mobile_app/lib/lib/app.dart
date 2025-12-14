@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'core/router/app_router.dart';
 
 class InterviewAceApp extends StatelessWidget {
   const InterviewAceApp({super.key});
@@ -12,14 +13,8 @@ class InterviewAceApp extends StatelessWidget {
         useMaterial3: true,
         colorSchemeSeed: Colors.indigo,
       ),
-      home: const Scaffold(
-        body: Center(
-          child: Text(
-            'InterviewAce AI',
-            style: TextStyle(fontSize: 26),
-          ),
-        ),
-      ),
+      initialRoute: AppRouter.login,
+      onGenerateRoute: AppRouter.generateRoute,
     );
   }
 }
