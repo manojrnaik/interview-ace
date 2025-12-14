@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'features/notifications/notification_service.dart';
 import 'shared/localization/app_localizations.dart';
 
 void main() {
