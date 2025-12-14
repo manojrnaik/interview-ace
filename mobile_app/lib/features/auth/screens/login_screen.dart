@@ -23,14 +23,18 @@ class LoginScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             PrimaryButton(
-              text: 'Login',
-              onPressed: () {
-                Navigator.pushReplacementNamed(
-                  context,
-                  AppRouter.home,
-                );
-              },
-            ),
+             text: 'Login',
+             onPressed: () async {
+              await ref.read(authControllerProvider)
+               .login(email, password);
+
+            Navigator.pushReplacementNamed(
+             context,
+             AppRouter.home,
+    );
+  },
+),
+
           ],
         ),
       ),
