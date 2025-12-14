@@ -24,16 +24,17 @@ class _InterviewScreenState extends State<InterviewScreen> {
   String _answer = '';
   bool _isLoading = true;
   bool _isListening = false;
+  bool _isSubmitting = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _initializeVoice();
+    _initVoice();
     _loadQuestion();
   }
 
-  Future<void> _initializeVoice() async {
+  Future<void> _initVoice() async {
     await _ttsService.init();
     await _sttService.init();
   }
@@ -42,8 +43,8 @@ class _InterviewScreenState extends State<InterviewScreen> {
     try {
       setState(() {
         _isLoading = true;
-        _error = null;
         _answer = '';
+        _error = null;
       });
 
       final question =
@@ -57,7 +58,7 @@ class _InterviewScreenState extends State<InterviewScreen> {
       await _ttsService.speak(question);
     } catch (e) {
       setState(() {
-        _error = 'Failed to load interview question';
+        _error = 'Failed to load question';
         _isLoading = false;
       });
     }
@@ -71,12 +72,63 @@ class _InterviewScreenState extends State<InterviewScreen> {
       setState(() => _isListening = true);
       await _sttService.startListening(
         onResult: (text) {
-          setState(() {
-            _answer = text;
-          });
+          setState(() => _answer = text);
         },
       );
     }
+  }
+
+  Future<void> _submitAnswer() async {
+    if (_answer.isEmpty || _question == null) return;
+
+    setState(() => _isSubmitting = true);
+
+    final result = await _apiService.evaluateAnswer(
+      role: widget.role,
+      question: _question!,
+      answer: _answer,
+    );
+
+    setState(() => _isSubmitting = false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          children: [
+            Text(
+              'Score: ${result['score']}/10',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Strengths',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            ...List.from(result['strengths'])
+                .map((e) => Text('• $e')),
+            const SizedBox(height: 12),
+            const Text('Improvements',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            ...List.from(result['improvements'])
+                .map((e) => Text('• $e')),
+            const SizedBox(height: 12),
+            Text(result['overallFeedback']),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _loadQuestion();
+              },
+              child: const Text('Next Question'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -89,90 +141,62 @@ class _InterviewScreenState extends State<InterviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.role),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadQuestion,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(widget.role)),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: _buildBody(),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(child: Text(_error!))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_question ?? '',
+                          style: const TextStyle(fontSize: 18)),
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _answer.isEmpty
+                              ? 'Tap mic and answer...'
+                              : _answer,
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: Icon(_isListening
+                                  ? Icons.stop
+                                  : Icons.mic),
+                              label: Text(
+                                  _isListening ? 'Stop' : 'Answer'),
+                              onPressed: _toggleListening,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed:
+                                  _isSubmitting ? null : _submitAnswer,
+                              child: _isSubmitting
+                                  ? const CircularProgressIndicator()
+                                  : const Text('Submit'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
       ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_error != null) {
-      return Center(
-        child: Text(
-          _error!,
-          style: const TextStyle(color: Colors.red),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Interview Question',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceVariant,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(_question ?? ''),
-        ),
-        const SizedBox(height: 24),
-        const Text(
-          'Your Answer',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            _answer.isEmpty ? 'Tap mic and speak...' : _answer,
-          ),
-        ),
-        const Spacer(),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                icon: Icon(_isListening ? Icons.stop : Icons.mic),
-                label: Text(_isListening ? 'Stop' : 'Answer'),
-                onPressed: _toggleListening,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: _loadQuestion,
-                child: const Text('Next Question'),
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }
+
 
